@@ -178,7 +178,7 @@ namespace listtools
 						{							
 							foreach (string word in path.Split('\\'))
 							{
-								if (ListDictionary.UpdateWordEntry(word))
+								if (ListDictionary.UpdateTermEntry(word))
 								{
 									++wordsUpdated;
 								}
@@ -188,136 +188,192 @@ namespace listtools
 					}
 
 					// Manual dictionary fixing
-					Log(options, "The dictionary has been populated. At this point, you may optionally fix some entries with low scores.", LogLevel.Info, true);
+					bool bShouldFix = false;
+					float scoreTolerance = 0;
 					while (true)
 					{
+						Console.Clear();
+						Log(options, "The dictionary has been populated. At this point, you may optionally fix some entries with low scores.", LogLevel.Info, true);
 						Console.WriteLine("Fix low-score entries? [y/N]: ");
 						string userResponse = Console.ReadLine();
 
 						if (userResponse.ToUpperInvariant() == "YES" || userResponse.ToUpperInvariant() == "Y")
-						{							
+						{						
+							Console.Clear();
 							Console.WriteLine("(Hint: A score of 0 usually means an all-caps entry. 0.5 will include any entries which are all lower-case.)");						
 							Console.WriteLine("Enter a threshold floating-point score to be used: ");
-							float scoreTolerance = 0;
 							while (!Single.TryParse(Console.ReadLine(), out scoreTolerance))
 							{
 								Console.Clear();
 								Console.WriteLine("Please enter a valid numeric value.");
 							}
 
+							bShouldFix = true;
 
-							ListDictionary.EntryScoreTolerance = scoreTolerance;
-
-							long progressCount = 0;
-							long totalCount = ListDictionary.LowScoreEntries.Count();
-							foreach (KeyValuePair<string, ListfileDictionaryEntry> DictionaryEntry in ListDictionary.LowScoreEntries)
-							{
-								string newWord = "";
-								bool restartWordError = false;
-								++progressCount;
-								while (true)
-								{												
-									Console.Clear();
-									Console.WriteLine("========");
-									Console.WriteLine(String.Format("Progress: {0} of {1}", progressCount, totalCount));
-									Console.WriteLine("========");
-									Console.WriteLine(String.Format("| Current word key: {0}", DictionaryEntry.Key));
-									Console.WriteLine(String.Format("| Current word value: {0}", DictionaryEntry.Value.Word));
-									Console.WriteLine(String.Format("| Current word score: {0}", DictionaryEntry.Value.Score));
-									Console.WriteLine("|");
-									Console.WriteLine(String.Format("| Guessed correct word: {0}", WordScore.Guess(DictionaryEntry.Value.Word)));
-									if (restartWordError)
-									{
-										Console.WriteLine("| Error: The new word must be the same as the old word. Only casing may be altered.");
-									}
-									Console.WriteLine("========");
-
-									Console.Write("> : ");
-									newWord = Console.ReadLine();
-
-									if (!String.IsNullOrEmpty(newWord) && newWord.ToUpperInvariant() == DictionaryEntry.Key)
-									{
-										Console.Clear();
-										Console.WriteLine("========");
-										Console.WriteLine(String.Format("Progress: {0} of {1}", progressCount, totalCount));
-										Console.WriteLine("========");
-										Console.WriteLine(String.Format("| Current word key: {0}", DictionaryEntry.Key));
-										Console.WriteLine(String.Format("| Current word value: {0}", DictionaryEntry.Value.Word));
-										Console.WriteLine(String.Format("| Current word score: {0}", DictionaryEntry.Value.Score));
-										Console.WriteLine("|");
-										Console.WriteLine(String.Format("| New word value: {0}", newWord));
-										Console.WriteLine(String.Format("| New word score (manually set): Maximum"));
-										Console.WriteLine("========");
-										Console.Write("Confirm? [Y/n] : ");
-
-										string confirmResponse = Console.ReadLine();
-
-										if (confirmResponse.ToUpperInvariant() != "NO" || confirmResponse.ToUpperInvariant() != "N")
-										{
-											// Positive confirmation, save the new word.
-											DictionaryEntry.Value.ForceUpdateWord(newWord, Single.MaxValue);
-
-											//Save the current dictionary
-											File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
-											break;
-										}
-										else
-										{
-											// No confirmation, try again.
-											continue;
-										}
-									}
-									else if (!String.IsNullOrEmpty(newWord))
-									{
-										// The word the user entered was malformed or didn't match the original word.
-										restartWordError = true;
-									}
-									else
-									{
-										// The guessed word was fine, so use that.					
-										DictionaryEntry.Value.ForceUpdateWord(WordScore.Guess(DictionaryEntry.Value.Word), Single.MaxValue);
-										break;
-									}
-								}
-							}
 							break;
 						}
-						else if (userResponse.ToUpperInvariant() == "NO" || userResponse.ToUpperInvariant() == "N")
+						else if (String.IsNullOrEmpty(userResponse))
 						{
-							break;
+							continue;
 						}
 						else
 						{
 							Console.Clear();
+							break;
 						}
 					}
-					//Save the current dictionary
-					File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
 
+					if (bShouldFix)
+					{
+						ListDictionary.EntryLowScoreTolerance = scoreTolerance;
+						long progressCount = 0;
+						long totalCount = ListDictionary.LowScoreEntries.Count();
+						bool quitFixing = false;
+
+						foreach (KeyValuePair<string, ListfileDictionaryEntry> DictionaryEntry in ListDictionary.LowScoreEntries)
+						//foreach (KeyValuePair<string, ListfileDictionaryEntry> DictionaryEntry in ListDictionary.HighScoreEntries.Where(pair => pair.Value.Term.Contains("Smpint")))
+						{
+							if (quitFixing)
+							{
+								break;
+							}
+
+							bool restartWordError = false;
+							++progressCount;
+							while (true)
+							{
+								// Display the term to the user with options										
+								string newTerm = ShowTerm(totalCount, progressCount, DictionaryEntry, ListDictionary, false, "", restartWordError);
+
+								if (newTerm.ToUpperInvariant() == "QUIT" || newTerm.ToUpperInvariant() == "Q")
+								{
+									//Save the current dictionary
+									Log(options, "Saving dictionary and quitting...");
+									File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
+									quitFixing = true;
+									break;
+								}
+								else if (!String.IsNullOrEmpty(newTerm))
+								{
+									// The user replied with one of the two options, or a malfored word
+									if (newTerm == "1")
+									{
+										// The guessed term (using TermScore) was fine, so use that.					
+										DictionaryEntry.Value.ForceUpdateTerm(TermScore.Guess(DictionaryEntry.Value.Term), Single.MaxValue);
+										ListDictionary.AddNewTermWords(TermScore.Guess(DictionaryEntry.Value.Term));
+
+										//Save the current dictionary
+										Log(options, "Saving dictionary...");
+										File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
+
+										// Continue to the next word
+										break;						
+									}
+									else if (newTerm == "2")
+									{
+										// The guessed term (using ListfileDictionary) was fine, so use that.					
+										DictionaryEntry.Value.ForceUpdateTerm(ListDictionary.Guess(DictionaryEntry.Value.Term), Single.MaxValue);
+										ListDictionary.AddNewTermWords(ListDictionary.Guess(DictionaryEntry.Value.Term));
+
+										//Save the current dictionary
+										Log(options, "Saving dictionary...");
+										File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
+
+										// Continue to the next word
+										break;											
+									}
+									else if (newTerm.ToUpperInvariant() == DictionaryEntry.Key)
+									{
+										// The user entered a valid term
+										string confirmResponse = ShowTerm(totalCount, progressCount, DictionaryEntry, ListDictionary, true, newTerm);
+
+										if (String.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
+										{
+											// Positive confirmation, save the new word.
+											DictionaryEntry.Value.ForceUpdateTerm(newTerm, Single.MaxValue);
+											ListDictionary.AddNewTermWords(newTerm);
+
+											//Save the current dictionary
+											Log(options, "Saving dictionary...");
+											File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
+
+											// Go to the next term
+											break;
+										}
+										else
+										{
+											// The user didn't confirm the word. Try again.
+											continue;
+										}
+									}
+									else
+									{
+										// The word the user entered was malformed or didn't match the original word.
+										restartWordError = true;
+										continue;
+									}
+								}
+							}
+						}
+					}
 
 					// Optimize lists using dictionary
-					List<OptimizedListContainer> OptimizedLists = new List<OptimizedListContainer>();
+					Log(options, "Optimizing lists using dictionary...", LogLevel.Info, true);
+					List<OptimizedListContainer> OptimizedListContainers = new List<OptimizedListContainer>();
 					foreach (KeyValuePair<byte[], List<string>> PackageList in PackageLists)
-					{
+					{						
 						string PackageName = PackageNames[PackageList.Key];
-						List<string> unoptimizedList = PackageList.Value;
+						Log(options, String.Format("Optimizing lists for {0}...", PackageName));
 
+						List<string> unoptimizedList = PackageList.Value;
 						List<string> optimizedList = ListDictionary.OptimizeList(unoptimizedList);
 
-						OptimizedListContainer listContainer = new OptimizedListContainer(PackageName);
-						listContainer.AddOptimizedList(new OptimizedList(PackageList.Key, optimizedList));
+						string listContainerPath = String.Format("{0}{1}{2}.{3}", options.OutputPath, 
+							                           Path.DirectorySeparatorChar, 
+							                           PackageName, 
+							                           OptimizedListContainer.Extension);
 
-						OptimizedLists.Add(listContainer);
+						OptimizedListContainer listContainer;
+						if (File.Exists(listContainerPath))
+						{
+							listContainer = new OptimizedListContainer(File.ReadAllBytes(listContainerPath));
+						}
+						else
+						{
+							listContainer = new OptimizedListContainer(PackageName);
+						}
+
+
+						OptimizedList newList = new OptimizedList(PackageList.Key, optimizedList);
+						if (listContainer.ContainsPackageList(PackageList.Key))
+						{
+							if (!listContainer.IsListSameAsStored(newList))
+							{
+								listContainer.ReplaceOptimizedList(newList);
+							}
+						}
+						else
+						{
+							listContainer.AddOptimizedList(newList);
+						}
+
+						OptimizedListContainers.Add(listContainer);
 					}
 
 					// Save the new lists
-					foreach (OptimizedListContainer listContainer in OptimizedLists)
+					Log(options, "Saving optimized lists...", LogLevel.Info, true);
+					foreach (OptimizedListContainer listContainer in OptimizedListContainers)
 					{
+						Log(options, String.Format("Saving lists for {0}...", listContainer.PackageName));
 						File.WriteAllBytes(String.Format("{0}{1}{2}.{3}", options.OutputPath, 
 								Path.DirectorySeparatorChar, 
-								listContainer.ArchiveName, 
+								listContainer.PackageName, 
 								OptimizedListContainer.Extension), listContainer.GetBytes());
 					}
+
+					//Save the current dictionary
+					Log(options, "Saving dictionary...");
+					File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
 				}
 			}
 			else
@@ -348,6 +404,67 @@ namespace listtools
 			// Store all paths in the specified output format (optimized or flatfile)
 
 			Environment.Exit(EXIT_SUCCESS);
+		}
+
+		private static string ShowTerm(long totalTerms, long termProgress, KeyValuePair<string,
+		                             ListfileDictionaryEntry> termEntryPair,
+		                               ListfileDictionary dictionary, 
+		                               bool confirmDialog = false,
+		                               string newWord = "",
+		                               bool restartError = false)
+		{
+			Console.Clear();
+			Console.WriteLine("========");
+			Console.WriteLine(String.Format("Progress: {0} of {1}", termProgress, totalTerms));
+			Console.WriteLine("========");
+			Console.WriteLine(String.Format("| Current word key: {0}", termEntryPair.Key));
+			Console.WriteLine(String.Format("| Current word value: {0}", termEntryPair.Value.Term));
+			Console.WriteLine(String.Format("| Current word score: {0}", termEntryPair.Value.Score));
+			Console.WriteLine("|");
+			if (confirmDialog)
+			{
+				Console.WriteLine(String.Format("| New word value: {0}", newWord));
+				Console.WriteLine(String.Format("| New word score (manually set): Maximum"));
+			}
+			else
+			{
+				Console.WriteLine(String.Format("| [1] Guessed correct word (TermScore)\t: {0}", TermScore.Guess(termEntryPair.Value.Term)));
+				Console.WriteLine(String.Format("| [2] Guessed correct word (Dictionary)\t: {0}", dictionary.Guess(termEntryPair.Value.Term)));
+			}
+
+			if (restartError)
+			{
+				Console.WriteLine("| Error: The new word must be the same as the old word. Only casing may be altered.");
+			}
+
+			Console.WriteLine("========");
+
+			if (confirmDialog)
+			{
+				Console.Write("> [Y/n]: ");
+			}
+			else
+			{
+				Console.WriteLine("Default: Dictionary");
+				Console.Write("> [1/2/input/q]: ");
+			}
+
+			string input = Console.ReadLine();
+			if (String.IsNullOrEmpty(input))
+			{
+				if (confirmDialog)
+				{
+					return "Y";
+				}
+				else
+				{
+					return "2";
+				}
+			}
+			else
+			{
+				return input;
+			}
 		}
 
 		private static void PrintArchiveNames(List<string> ArchivePaths)

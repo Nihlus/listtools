@@ -22,7 +22,12 @@
     <Externalconsole>true</Externalconsole>
     <PlatformTarget>x86</PlatformTarget>
     <DocumentationFile>bin\Debug\listtools.xml</DocumentationFile>
-    <Commandlineparameters>--input "/media/storage2/Games/Vanilla World of Warcraft" --output "/home/jarl/Desktop/listtools" --format flatfile --task-type optimize</Commandlineparameters>
+    <Commandlineparameters>--dictionary "$DICTIONARY_PATH" --input "/media/storage2/Games/Vanilla World of Warcraft" --output "/home/jarl/Desktop/listtools" --format flatfile --task-type optimize</Commandlineparameters>
+    <EnvironmentVariables>
+      <EnvironmentVariables>
+        <Variable name="DICTIONARY_PATH" value="/home/jarl/Programming/liblistfile/liblistfile/Dictionary/dictionary.dic" />
+      </EnvironmentVariables>
+    </EnvironmentVariables>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
     <Optimize>true</Optimize>
