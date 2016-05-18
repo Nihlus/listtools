@@ -20,13 +20,13 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 using System;
-using Warcraft.MPQ;
-using System.IO;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using liblistfile;
 using liblistfile.Score;
+using Warcraft.MPQ;
 
 namespace listtools
 {
@@ -362,14 +362,38 @@ namespace listtools
 
 					// Save the new lists
 					Log(options, "Saving optimized lists...", LogLevel.Info, true);
-					foreach (OptimizedListContainer listContainer in OptimizedListContainers)
+
+					if (options.Format == OutputFormat.Flatfile)
 					{
-						Log(options, String.Format("Saving lists for {0}...", listContainer.PackageName));
-						File.WriteAllBytes(String.Format("{0}{1}{2}.{3}", options.OutputPath, 
-								Path.DirectorySeparatorChar, 
-								listContainer.PackageName, 
-								OptimizedListContainer.Extension), listContainer.GetBytes());
+						foreach (OptimizedListContainer listContainer in OptimizedListContainers)
+						{
+							Log(options, String.Format("Saving lists for {0}...", listContainer.PackageName));
+
+							foreach (KeyValuePair<byte[], OptimizedList> optimizedListPair in listContainer.OptimizedLists)
+							{
+								string packageHash = BitConverter.ToString(optimizedListPair.Value.PackageHash).Replace("-", "");
+
+								File.WriteAllLines(String.Format("{0}{1}{2}-{3}-{4}.{5}", options.OutputPath, 
+										Path.DirectorySeparatorChar, 
+										"(listfile)",
+										listContainer.PackageName, 
+										packageHash,
+										"txt"), optimizedListPair.Value.OptimizedPaths);
+							}
+						}
 					}
+					else
+					{
+						foreach (OptimizedListContainer listContainer in OptimizedListContainers)
+						{
+							Log(options, String.Format("Saving lists for {0}...", listContainer.PackageName));
+							File.WriteAllBytes(String.Format("{0}{1}{2}.{3}", options.OutputPath, 
+									Path.DirectorySeparatorChar, 
+									listContainer.PackageName, 
+									OptimizedListContainer.Extension), listContainer.GetBytes());
+						}
+					}
+
 
 					//Save the current dictionary
 					Log(options, "Saving dictionary...");

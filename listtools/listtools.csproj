@@ -22,10 +22,14 @@
     <Externalconsole>true</Externalconsole>
     <PlatformTarget>x86</PlatformTarget>
     <DocumentationFile>bin\Debug\listtools.xml</DocumentationFile>
-    <Commandlineparameters>--dictionary "$DICTIONARY_PATH" --input "/media/storage2/Games/Vanilla World of Warcraft" --output "/home/jarl/Desktop/listtools" --format flatfile --task-type optimize</Commandlineparameters>
+    <Commandlineparameters>--dictionary "$DICTIONARY_PATH" --input "$GAME_PATH" --output "$OUTPUT_PATH" --format $OUTPUT_FORMAT --task-type $TASK_TYPE</Commandlineparameters>
     <EnvironmentVariables>
       <EnvironmentVariables>
         <Variable name="DICTIONARY_PATH" value="/home/jarl/Programming/liblistfile/liblistfile/Dictionary/dictionary.dic" />
+        <Variable name="GAME_PATH" value="/media/storage2/Games/Vanilla World of Warcraft" />
+        <Variable name="OUTPUT_PATH" value="/home/jarl/Desktop/listtools" />
+        <Variable name="OUTPUT_FORMAT" value="compressed" />
+        <Variable name="TASK_TYPE" value="optimize" />
       </EnvironmentVariables>
     </EnvironmentVariables>
   </PropertyGroup>

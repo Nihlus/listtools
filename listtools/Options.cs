@@ -21,9 +21,9 @@
 //
 using System;
 using System.IO;
-using liblistfile;
 using CommandLine;
 using CommandLine.Text;
+using liblistfile;
 
 namespace listtools
 {
@@ -85,7 +85,7 @@ namespace listtools
 		/// </summary>
 		/// <value>The input path.</value>
 		[Option('f', "format", DefaultValue = OutputFormat.Flatfile,
-			HelpText = "Sets the output format of listfiles. Valid options are \"flatfile\" and \"optimized\". When generating a listfile, only flatfiles can be generated. The options are case-insensitive.")]
+			HelpText = "Sets the output format of listfiles. Valid options are \"flatfile\" and \"compressed\". When generating a listfile, only flatfiles can be generated. The options are case-insensitive.")]
 		public OutputFormat Format
 		{ 
 			get; 
@@ -116,7 +116,7 @@ namespace listtools
 		}
 
 		/// <summary>
-		/// Gets a value indicating whether this instance is using default dictionary.
+		/// Gets a value indicating whether this instance is using the default dictionary.
 		/// </summary>
 		/// <value><c>true</c> if this instance is using default dictionary; otherwise, <c>false</c>.</value>
 		public bool IsUsingDefaultDictionary
@@ -177,9 +177,9 @@ namespace listtools
 		Flatfile = 0,
 
 		/// <summary>
-		/// Optimized format. Stores listfiles in a zipped binary format.
+		/// Compressed format. Stores listfiles in a zipped binary format.
 		/// </summary>
-		Optimized = 1
+		Compressed = 1
 	}
 }
 
