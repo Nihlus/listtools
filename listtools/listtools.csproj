@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -26,7 +26,7 @@
     <EnvironmentVariables>
       <EnvironmentVariables>
         <Variable name="DICTIONARY_PATH" value="/home/jarl/Programming/liblistfile/liblistfile/Dictionary/dictionary.dic" />
-        <Variable name="GAME_PATH" value="/media/storage2/Games/Vanilla World of Warcraft" />
+        <Variable name="GAME_PATH" value="/media/storage2/Games/World of Warcraft WOTLK" />
         <Variable name="OUTPUT_PATH" value="/home/jarl/Desktop/listtools" />
         <Variable name="OUTPUT_FORMAT" value="compressed" />
         <Variable name="TASK_TYPE" value="optimize" />
@@ -44,9 +44,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
-    <Reference Include="libwarcraft, Version=1.0.1.24181, Culture=neutral, PublicKeyToken=35235ad96d247f26">
-      <Package>libwarcraft1.0</Package>
-    </Reference>
     <Reference Include="CommandLine">
       <HintPath>..\packages\CommandLineParser.1.9.71\lib\net45\CommandLine.dll</HintPath>
     </Reference>
@@ -64,6 +61,10 @@
     <ProjectReference Include="..\..\liblistfile\liblistfile\liblistfile.csproj">
       <Project>{CE32160A-4A61-4813-93A5-D9DFDD7AB470}</Project>
       <Name>liblistfile</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\libwarcraft\libwarcraft\libwarcraft.csproj">
+      <Project>{DA06A44E-A67B-46C7-B07D-E90AEBED0502}</Project>
+      <Name>libwarcraft</Name>
     </ProjectReference>
   </ItemGroup>
 </Project>

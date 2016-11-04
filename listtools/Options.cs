@@ -33,39 +33,40 @@ namespace listtools
 	public class Options
 	{
 		/// <summary>
-		/// Gets or sets the input path.
+		/// Gets or sets the input path to a folder containing MPQ archives. Subfolders are
+		/// searched as well.
 		/// </summary>
 		/// <value>The input path.</value>
 		[Option('i', "input", Required = true,
 			HelpText = "Selects the input directory which will be used for processing.")]
 		public string InputPath
-		{ 
-			get; 
-			set; 
+		{
+			get;
+			set;
 		}
 
 		/// <summary>
-		/// Gets or sets the output path.
+		/// Gets or sets the output path where the generated listfiles will be stored.
 		/// </summary>
 		/// <value>The output path.</value>
 		[Option('o', "output", Required = true,
 			HelpText = "Selects the output directory which will be used for processing.")]
 		public string OutputPath
-		{ 
-			get; 
-			set; 
+		{
+			get;
+			set;
 		}
 
 		/// <summary>
-		/// Gets or sets the input dictionary.
+		/// Gets or sets the input dictionary from which the correct terms are gathered.
 		/// </summary>
 		/// <value>The input dictionary.</value>
 		[Option('d', "dictionary",
 			HelpText = "Selects the input dictionary which will be used for processing.")]
 		public string DictionaryPath
-		{ 
-			get; 
-			set; 
+		{
+			get;
+			set;
 		}
 
 		/// <summary>
@@ -75,9 +76,9 @@ namespace listtools
 		[Option('t', "task-type", DefaultValue = TaskType.Generate,
 			HelpText = "Sets the task the program should perform. Valid options are \"generate\" and \"optimize\". The options are case-insensitive.")]
 		public TaskType SelectedTask
-		{ 
-			get; 
-			set; 
+		{
+			get;
+			set;
 		}
 
 		/// <summary>
@@ -87,9 +88,9 @@ namespace listtools
 		[Option('f', "format", DefaultValue = OutputFormat.Flatfile,
 			HelpText = "Sets the output format of listfiles. Valid options are \"flatfile\" and \"compressed\". When generating a listfile, only flatfiles can be generated. The options are case-insensitive.")]
 		public OutputFormat Format
-		{ 
-			get; 
-			set; 
+		{
+			get;
+			set;
 		}
 
 		/// <summary>
@@ -134,7 +135,7 @@ namespace listtools
 		public static string GetDefaultDictionaryPath()
 		{
 			string applicationDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-			string dictionaryPath = String.Format("{0}{1}listtools{1}dictionary.{2}", applicationDataPath, 
+			string dictionaryPath = String.Format("{0}{1}listtools{1}dictionary.{2}", applicationDataPath,
 				                        Path.DirectorySeparatorChar, ListfileDictionary.Extension);
 
 			return dictionaryPath;
