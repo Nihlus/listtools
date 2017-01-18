@@ -19,6 +19,7 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
+
 using System;
 using System.IO;
 using CommandLine;
@@ -124,7 +125,7 @@ namespace listtools
 		{
 			get
 			{
-				return this.DictionaryPath == Options.GetDefaultDictionaryPath();
+				return this.DictionaryPath == GetDefaultDictionaryPath();
 			}
 		}
 
@@ -135,7 +136,7 @@ namespace listtools
 		public static string GetDefaultDictionaryPath()
 		{
 			string applicationDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-			string dictionaryPath = String.Format("{0}{1}listtools{1}dictionary.{2}", applicationDataPath,
+			string dictionaryPath = string.Format("{0}{1}listtools{1}dictionary.{2}", applicationDataPath,
 				                        Path.DirectorySeparatorChar, ListfileDictionary.Extension);
 
 			return dictionaryPath;
@@ -149,38 +150,6 @@ namespace listtools
 		{
 			return HelpText.AutoBuild(this, current => HelpText.DefaultParsingErrorsHandler(this, current));
 		}
-	}
-
-	/// <summary>
-	/// The type of task the tool will perform.
-	/// </summary>
-	public enum TaskType
-	{
-		/// <summary>
-		/// Generates a new listfile.
-		/// </summary>
-		Generate = 0,
-
-		/// <summary>
-		/// Optimizes an existing set of archives.
-		/// </summary>
-		Optimize = 1
-	}
-
-	/// <summary>
-	/// The output format the tool will use.
-	/// </summary>
-	public enum OutputFormat
-	{
-		/// <summary>
-		/// Flatfile. Simple lines in a text document.
-		/// </summary>
-		Flatfile = 0,
-
-		/// <summary>
-		/// Compressed format. Stores listfiles in a zipped binary format.
-		/// </summary>
-		Compressed = 1
 	}
 }
 

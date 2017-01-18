@@ -24,447 +24,388 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using CommandLine;
 using liblistfile;
 using liblistfile.Score;
 using Warcraft.MPQ;
-using Warcraft.TRS;
 
 namespace listtools
 {
-	class MainClass
+	internal static class Program
 	{
-		public const int EXIT_SUCCESS = 0;
-		public const int EXIT_FAILURE_NO_INPUT = 1;
-		public const int EXIT_FAILURE_TASK_ERROR = 2;
-		public const int EXIT_FAILURE_NO_DICTIONARY = 3;
-		public const int EXIT_FAILURE_NO_OUTPUT = 4;
+		private const int ExitSuccess = 0;
+		private const int ExitFailureNoInput = 1;
+		private const int ExitFailureTaskError = 2;
+		private const int ExitFailureNoDictionary = 3;
+		private const int ExitFailureNoOutput = 4;
 
 		public static void Main(string[] args)
 		{
 			Options options = new Options();
-			if (CommandLine.Parser.Default.ParseArguments(args, options))
+			if (Parser.Default.ParseArguments(args, options))
 			{
 				// Fix dictionary path if needed
-				if (String.IsNullOrEmpty(options.DictionaryPath))
+				if (string.IsNullOrEmpty(options.DictionaryPath))
 				{
 					options.DictionaryPath = Options.GetDefaultDictionaryPath();
 				}
 
-				// Sanity checks
-				if (!Directory.Exists(options.InputPath))
-				{
-					Log(options, "The input directory did not exist.", LogLevel.Error);
-					Environment.Exit(EXIT_FAILURE_NO_INPUT);
-				}
+				PerformSanityChecks(options);
 
-				if (Directory.GetFiles(options.InputPath).Length <= 0)
+				switch (options.SelectedTask)
 				{
-					Log(options, "The input directory did not contain any files.", LogLevel.Error);
-					Environment.Exit(EXIT_FAILURE_NO_INPUT);
-				}
-
-				if (String.IsNullOrEmpty(options.OutputPath))
-				{
-					Log(options, "The output directory must not be empty.", LogLevel.Error);
-					Environment.Exit(EXIT_FAILURE_NO_OUTPUT);
-				}
-
-				if (!Directory.Exists(Directory.GetParent(options.DictionaryPath).FullName))
-				{
-					Directory.CreateDirectory(Directory.GetParent(options.DictionaryPath).FullName);
-				}
-
-				if (!options.IsUsingDefaultDictionary && !File.Exists(options.DictionaryPath))
-				{
-					Log(options, "The selected dictionary did not exist.", LogLevel.Error);
-					Environment.Exit(EXIT_FAILURE_NO_DICTIONARY);
-				}
-
-				if (!options.DictionaryPath.EndsWith(ListfileDictionary.Extension))
-				{
-					Log(options, "The selected dictionary did not end with a valid extension.", LogLevel.Error);
-					Environment.Exit(EXIT_FAILURE_NO_DICTIONARY);
-				}
-
-				if (!Directory.Exists(options.OutputPath))
-				{
-					Directory.CreateDirectory(options.OutputPath);
-				}
-				// End sanity checks
-
-				if (options.SelectedTask == TaskType.Generate)
-				{
-					Log(options, $"Generating new listfile from directory {options.InputPath}");
-
-					using (FileStream fs = File.Create($"{options.OutputPath}{Path.DirectorySeparatorChar}(listfile)"))
+					case TaskType.Generate:
 					{
-						using (StreamWriter sw = new StreamWriter(fs))
+						GenerateListfile(options);
+						break;
+					}
+					case TaskType.Optimize:
+					{
+						Log(options, $"Optimizing archive listfiles in directory {options.InputPath}...");
+
+						ListfileDictionary listDictionary;
+						if (File.Exists(options.DictionaryPath))
 						{
-							foreach (string path in Directory.EnumerateFiles(options.InputPath, "*", SearchOption.AllDirectories))
-							{
-								string childPath = path
-								.Replace(options.InputPath, "")
-								.TrimStart(Path.DirectorySeparatorChar)
-								.Replace('/', '\\');
-
-								Log(options, $"Found path {path}, writing path {childPath}.");
-
-								sw.WriteLine(childPath);
-
-								sw.Flush();
-							}
-						}
-					}
-				}
-				else
-				{
-					Log(options, $"Optimizing archive listfiles in directory {options.InputPath}...");
-
-					ListfileDictionary ListDictionary;
-					if (File.Exists(options.DictionaryPath))
-					{
-						Log(options, "Loading dictionary...");
-						ListDictionary = new ListfileDictionary(File.ReadAllBytes(options.DictionaryPath));
-					}
-					else
-					{
-						Log(options, "Creating new dictionary...");
-						ListDictionary = new ListfileDictionary();
-					}
-
-					Log(options, "Loading packages...");
-
-					List<string> PackagePaths = Directory.EnumerateFiles(options.InputPath, "*.*", SearchOption.AllDirectories)
-					.OrderBy(a => a)
-					.Where(s => s.EndsWith(".mpq") || s.EndsWith(".MPQ"))
-					.ToList();
-
-					if (PackagePaths.Count <= 0)
-					{
-						Log(options, "No game packages were found in the input directory.", LogLevel.Warning);
-						Environment.Exit(EXIT_FAILURE_NO_INPUT);
-					}
-
-					PackagePaths.Sort();
-					Log(options, "Packages found: ");
-					PrintArchiveNames(PackagePaths);
-
-					// Load the archives with their hashes and listfiles
-					Dictionary<byte[], List<string>> PackageLists = new Dictionary<byte[], List<string>>();
-					Dictionary<byte[], string> PackageNames = new Dictionary<byte[], string>();
-
-					foreach (string PackagePath in PackagePaths)
-					{
-						// Hash the hash table and extract the listfile
-						byte[] md5Hash;
-						List<string> PackageListfile;
-						using (MPQ Package = new MPQ(File.OpenRead(PackagePath)))
-						{
-							Log(options, $"Hashing filetable and extracting listfile of {Path.GetFileName(PackagePath)}...");
-							using (MD5 md5 = MD5.Create())
-							{
-								md5Hash = md5.ComputeHash(Package.ArchiveHashTable.Serialize());
-							}
-							PackageListfile = Package.GetFileList();
-						}
-
-						PackageLists.Add(md5Hash, PackageListfile);
-						PackageNames.Add(md5Hash, Path.GetFileNameWithoutExtension(PackagePath));
-					}
-
-					// Populate dictionary
-					foreach (KeyValuePair<byte[], List<string>> PackageList in PackageLists)
-					{
-						long wordsUpdated = 0;
-						foreach (string path in PackageList.Value)
-						{
-							// For every path in the listfile, add the terms from each folder or filename
-							string[] foldersAndFile = path.Split('\\');
-							for (int i = 0; i < foldersAndFile.Length; ++i)
-							{
-								string term = foldersAndFile[i];
-
-								// Add the term to the dictionary
-								if (ListDictionary.UpdateTermEntry(term))
-								{
-									++wordsUpdated;
-								}
-
-								// Some special cases with MD5 hashes - the terms for the filenames here are set to full score right away
-								if (i == foldersAndFile.Length - 1)
-								{
-									if (path.ToLowerInvariant().StartsWith("textures\\bakednpctextures\\"))
-									{
-										if (ListDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), Single.MaxValue))
-										{
-											++wordsUpdated;
-										}
-									}
-
-									if (path.ToLowerInvariant().StartsWith("textures\\minimap\\") && !path.ToLowerInvariant().EndsWith("md5translate.trs"))
-									{
-										if (ListDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), Single.MaxValue))
-										{
-											++wordsUpdated;
-										}
-									}
-								}
-							}
-						}
-						Log(options, $"Successfully loaded package listfile into dictionary. {wordsUpdated} words updated.");
-					}
-
-					// Manual dictionary fixing
-					bool bShouldFix = false;
-					float scoreTolerance = 0;
-					while (true)
-					{
-						Console.Clear();
-						Log(options, "The dictionary has been populated. At this point, you may optionally fix some entries with low scores.", LogLevel.Info, true);
-						Console.WriteLine("Fix low-score entries? [y/N]: ");
-						string userResponse = Console.ReadLine();
-
-
-						if (String.IsNullOrEmpty(userResponse))
-						{
-							continue;
-						}
-						else if (userResponse.ToUpperInvariant() == "YES" || userResponse.ToUpperInvariant() == "Y")
-						{
-							Console.Clear();
-							Console.WriteLine("(Hint: A score of 0 usually means an all-caps entry. 0.5 will include any entries which are all lower-case.)");
-							Console.WriteLine("Enter a threshold floating-point score to be used: ");
-							while (!Single.TryParse(Console.ReadLine(), out scoreTolerance))
-							{
-								Console.Clear();
-								Console.WriteLine("Please enter a valid numeric value.");
-							}
-
-							bShouldFix = true;
-
-							break;
+							Log(options, "Loading dictionary...");
+							listDictionary = new ListfileDictionary(File.ReadAllBytes(options.DictionaryPath));
 						}
 						else
 						{
-							Console.Clear();
-							break;
+							Log(options, "Creating new dictionary...");
+							listDictionary = new ListfileDictionary();
 						}
-					}
 
-					if (bShouldFix)
-					{
-						ListDictionary.EntryLowScoreTolerance = scoreTolerance;
-						long progressCount = 0;
-						bool quitFixing = false;
+						Log(options, "Loading packages...");
 
-						#if true
-							long totalCount = ListDictionary.LowScoreEntries.Count();
-							foreach (KeyValuePair<string, ListfileDictionaryEntry> DictionaryEntry in ListDictionary.LowScoreEntries)
-						#else
-							string fixTerm = "Transportship";
-							long totalCount = ListDictionary.HighScoreEntries.Count(pair => pair.Value.Term.Contains(fixTerm));
-							foreach (KeyValuePair<string, ListfileDictionaryEntry> DictionaryEntry in ListDictionary.HighScoreEntries.Where(pair => pair.Value.Term.Contains(fixTerm)))
-						#endif
+						List<string> packagePaths = Directory.EnumerateFiles(options.InputPath, "*.*", SearchOption.AllDirectories)
+							.OrderBy(a => a)
+							.Where(s => s.EndsWith(".mpq") || s.EndsWith(".MPQ"))
+							.ToList();
+
+						if (packagePaths.Count <= 0)
 						{
-							if (quitFixing)
+							Log(options, "No game packages were found in the input directory.", LogLevel.Warning);
+							Environment.Exit(ExitFailureNoInput);
+						}
+
+						packagePaths.Sort();
+						Log(options, "Packages found: ");
+						PrintArchiveNames(packagePaths);
+
+						// Load the archives with their hashes and listfiles
+						Dictionary<byte[], List<string>> packageLists = new Dictionary<byte[], List<string>>();
+						Dictionary<byte[], string> packageNames = new Dictionary<byte[], string>();
+
+						foreach (string packagePath in packagePaths)
+						{
+							// Hash the hash table and extract the listfile
+							byte[] md5Hash;
+							List<string> packageListfile;
+							using (MPQ package = new MPQ(File.OpenRead(packagePath)))
 							{
+								Log(options, $"Hashing filetable and extracting listfile of {Path.GetFileName(packagePath)}...");
+								using (MD5 md5 = MD5.Create())
+								{
+									md5Hash = md5.ComputeHash(package.ArchiveHashTable.Serialize());
+								}
+								packageListfile = package.GetFileList();
+							}
+
+							packageLists.Add(md5Hash, packageListfile);
+							packageNames.Add(md5Hash, Path.GetFileNameWithoutExtension(packagePath));
+						}
+
+						// Populate dictionary
+						foreach (KeyValuePair<byte[], List<string>> packageList in packageLists)
+						{
+							long wordsUpdated = 0;
+							foreach (string path in packageList.Value)
+							{
+								// For every path in the listfile, add the terms from each folder or filename
+								string[] foldersAndFile = path.Split('\\');
+								for (int i = 0; i < foldersAndFile.Length; ++i)
+								{
+									string term = foldersAndFile[i];
+
+									// Add the term to the dictionary
+									if (listDictionary.UpdateTermEntry(term))
+									{
+										++wordsUpdated;
+									}
+
+									// Some special cases with MD5 hashes - the terms for the filenames here are set to full score right away
+									if (i == foldersAndFile.Length - 1)
+									{
+										if (path.ToLowerInvariant().StartsWith("textures\\bakednpctextures\\"))
+										{
+											if (listDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), float.MaxValue))
+											{
+												++wordsUpdated;
+											}
+										}
+
+										if (path.ToLowerInvariant().StartsWith("textures\\minimap\\") && !path.ToLowerInvariant().EndsWith("md5translate.trs"))
+										{
+											if (listDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), float.MaxValue))
+											{
+												++wordsUpdated;
+											}
+										}
+									}
+								}
+							}
+							Log(options, $"Successfully loaded package listfile into dictionary. {wordsUpdated} words updated.");
+						}
+
+						// Manual dictionary fixing
+						bool bShouldFix = false;
+						float scoreTolerance = 0;
+						while (true)
+						{
+							Console.Clear();
+							Log(options, "The dictionary has been populated. At this point, you may optionally fix some entries with low scores.", LogLevel.Info, true);
+							Console.WriteLine("Fix low-score entries? [y/N]: ");
+							string userResponse = Console.ReadLine();
+
+
+							if (string.IsNullOrEmpty(userResponse))
+							{
+								continue;
+							}
+
+							if (userResponse.ToUpperInvariant() == "YES" || userResponse.ToUpperInvariant() == "Y")
+							{
+								Console.Clear();
+								Console.WriteLine("(Hint: A score of 0 usually means an all-caps entry. 0.5 will include any entries which are all lower-case.)");
+								Console.WriteLine("Enter a threshold floating-point score to be used: ");
+								while (!float.TryParse(Console.ReadLine(), out scoreTolerance))
+								{
+									Console.Clear();
+									Console.WriteLine("Please enter a valid numeric value.");
+								}
+
+								bShouldFix = true;
+
 								break;
 							}
 
-							bool restartWordError = false;
-							++progressCount;
-							while (true)
-							{
-								// Display the term to the user with options
-								string newTerm = ShowTerm(totalCount, progressCount, DictionaryEntry, ListDictionary, false, "", restartWordError);
+							Console.Clear();
+							break;
+						}
 
-								if (newTerm.ToUpperInvariant() == "QUIT" || newTerm.ToUpperInvariant() == "Q")
+						if (bShouldFix)
+						{
+							listDictionary.EntryLowScoreTolerance = scoreTolerance;
+							long progressCount = 0;
+							bool quitFixing = false;
+
+							long totalCount = listDictionary.LowScoreEntries.Count();
+							foreach (KeyValuePair<string, ListfileDictionaryEntry> dictionaryEntry in listDictionary.LowScoreEntries)
+							{
+								if (quitFixing)
 								{
-									//Save the current dictionary
-									Log(options, "Saving dictionary and quitting...");
-									File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
-									quitFixing = true;
 									break;
 								}
-								else if (!String.IsNullOrEmpty(newTerm))
+
+								bool restartWordError = false;
+								++progressCount;
+								while (true)
 								{
-									// The user replied with one of the two options, or a malfored word
-									if (newTerm == "1")
+									// Display the term to the user with options
+									string newTerm = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, false, "", restartWordError);
+
+									if (newTerm.ToUpperInvariant() == "QUIT" || newTerm.ToUpperInvariant() == "Q")
 									{
-										newTerm = TermScore.Guess(DictionaryEntry.Value.Term);
-										// The user entered a valid term
-										string confirmResponse = ShowTerm(totalCount, progressCount, DictionaryEntry, ListDictionary, true, newTerm);
+										//Save the current dictionary
+										Log(options, "Saving dictionary and quitting...");
+										File.WriteAllBytes(options.DictionaryPath, listDictionary.Serialize());
+										quitFixing = true;
+										break;
+									}
 
-										if (String.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
+									if (!string.IsNullOrEmpty(newTerm))
+									{
+										// The user replied with one of the two options, or a malfored word
+										if (newTerm == "1")
 										{
-											// Positive confirmation, save the new word.
-											DictionaryEntry.Value.SetTerm(newTerm);
-											DictionaryEntry.Value.SetScore(Single.MaxValue);
+											newTerm = TermScore.Guess(dictionaryEntry.Value.Term);
+											// The user entered a valid term
+											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
 
-											ListDictionary.AddNewTermWords(newTerm);
+											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
+											{
+												// Positive confirmation, save the new word.
+												dictionaryEntry.Value.SetTerm(newTerm);
+												dictionaryEntry.Value.SetScore(float.MaxValue);
 
-											// Go to the next term
-											break;
+												listDictionary.AddNewTermWords(newTerm);
+
+												// Go to the next term
+												break;
+											}
+											else
+											{
+												// The user didn't confirm the word. Try again.
+												continue;
+											}
+										}
+
+										if (newTerm == "2")
+										{
+											newTerm = listDictionary.Guess(dictionaryEntry.Value.Term);
+											// The user entered a valid term
+											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
+
+											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
+											{
+												// Positive confirmation, save the new word.
+												dictionaryEntry.Value.SetTerm(newTerm);
+												dictionaryEntry.Value.SetScore(float.MaxValue);
+
+												listDictionary.AddNewTermWords(newTerm);
+
+												// Go to the next term
+												break;
+											}
+											else
+											{
+												// The user didn't confirm the word. Try again.
+												continue;
+											}
+										}
+
+										if (newTerm == "3")
+										{
+											// The user requested to keep the word
+											newTerm = dictionaryEntry.Value.Term;
+											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
+
+											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" ||
+											    confirmResponse.ToUpperInvariant() == "Y")
+											{
+												// Positive confirmation, save the new word.
+												dictionaryEntry.Value.SetTerm(newTerm);
+												dictionaryEntry.Value.SetScore(float.MaxValue);
+
+												// Go to the next term
+												break;
+											}
+											else
+											{
+												// The user didn't confirm the word. Try again.
+												continue;
+											}
+										}
+
+										if (newTerm.ToUpperInvariant() == dictionaryEntry.Key)
+										{
+											// The user entered a valid term
+											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
+
+											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
+											{
+												// Positive confirmation, save the new word.
+												dictionaryEntry.Value.SetTerm(newTerm);
+												dictionaryEntry.Value.SetScore(float.MaxValue);
+
+												listDictionary.AddNewTermWords(newTerm);
+
+												// Go to the next term
+												break;
+											}
+											else
+											{
+												// The user didn't confirm the word. Try again.
+												continue;
+											}
 										}
 										else
 										{
-											// The user didn't confirm the word. Try again.
+											// The word the user entered was malformed or didn't match the original word.
+											restartWordError = true;
 											continue;
 										}
-									}
-									else if (newTerm == "2")
-									{
-										newTerm = ListDictionary.Guess(DictionaryEntry.Value.Term);
-										// The user entered a valid term
-										string confirmResponse = ShowTerm(totalCount, progressCount, DictionaryEntry, ListDictionary, true, newTerm);
-
-										if (String.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
-										{
-											// Positive confirmation, save the new word.
-											DictionaryEntry.Value.SetTerm(newTerm);
-											DictionaryEntry.Value.SetScore(Single.MaxValue);
-
-											ListDictionary.AddNewTermWords(newTerm);
-
-											// Go to the next term
-											break;
-										}
-										else
-										{
-											// The user didn't confirm the word. Try again.
-											continue;
-										}
-									}
-									else if (newTerm == "3")
-									{
-										// The user requested to keep the word
-										newTerm = DictionaryEntry.Value.Term;
-										string confirmResponse = ShowTerm(totalCount, progressCount, DictionaryEntry, ListDictionary, true, newTerm);
-
-										if (String.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" ||
-										    confirmResponse.ToUpperInvariant() == "Y")
-										{
-											// Positive confirmation, save the new word.
-											DictionaryEntry.Value.SetTerm(newTerm);
-											DictionaryEntry.Value.SetScore(Single.MaxValue);
-
-											// Go to the next term
-											break;
-										}
-										else
-										{
-											// The user didn't confirm the word. Try again.
-											continue;
-										}
-									}
-									else if (newTerm.ToUpperInvariant() == DictionaryEntry.Key)
-									{
-										// The user entered a valid term
-										string confirmResponse = ShowTerm(totalCount, progressCount, DictionaryEntry, ListDictionary, true, newTerm);
-
-										if (String.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
-										{
-											// Positive confirmation, save the new word.
-											DictionaryEntry.Value.SetTerm(newTerm);
-											DictionaryEntry.Value.SetScore(Single.MaxValue);
-
-											ListDictionary.AddNewTermWords(newTerm);
-
-											// Go to the next term
-											break;
-										}
-										else
-										{
-											// The user didn't confirm the word. Try again.
-											continue;
-										}
-									}
-									else
-									{
-										// The word the user entered was malformed or didn't match the original word.
-										restartWordError = true;
-										continue;
 									}
 								}
 							}
 						}
-					}
 
-					// Optimize lists using dictionary
-					Log(options, "Optimizing lists using dictionary...", LogLevel.Info, true);
-					List<OptimizedListContainer> OptimizedListContainers = new List<OptimizedListContainer>();
-					foreach (KeyValuePair<byte[], List<string>> PackageList in PackageLists)
-					{
-						string PackageName = PackageNames[PackageList.Key];
-						Log(options, $"Optimizing lists for {PackageName}...");
-
-						List<string> unoptimizedList = PackageList.Value;
-						List<string> optimizedList = ListDictionary.OptimizeList(unoptimizedList);
-
-						string listContainerPath =
-							$"{options.OutputPath}{Path.DirectorySeparatorChar}{PackageName}.{OptimizedListContainer.Extension}";
-
-						OptimizedListContainer listContainer;
-						if (File.Exists(listContainerPath))
+						// Optimize lists using dictionary
+						Log(options, "Optimizing lists using dictionary...", LogLevel.Info, true);
+						List<OptimizedListContainer> optimizedListContainers = new List<OptimizedListContainer>();
+						foreach (KeyValuePair<byte[], List<string>> packageList in packageLists)
 						{
-							listContainer = new OptimizedListContainer(File.ReadAllBytes(listContainerPath));
-						}
-						else
-						{
-							listContainer = new OptimizedListContainer(PackageName);
-						}
+							string packageName = packageNames[packageList.Key];
+							Log(options, $"Optimizing lists for {packageName}...");
 
+							List<string> unoptimizedList = packageList.Value;
+							List<string> optimizedList = listDictionary.OptimizeList(unoptimizedList);
 
-						OptimizedList newList = new OptimizedList(PackageList.Key, optimizedList);
-						if (listContainer.ContainsPackageListfile(PackageList.Key))
-						{
-							if (!listContainer.IsListSameAsStored(newList))
+							string listContainerPath =
+								$"{options.OutputPath}{Path.DirectorySeparatorChar}{packageName}.{OptimizedListContainer.Extension}";
+
+							OptimizedListContainer listContainer;
+							if (File.Exists(listContainerPath))
 							{
-								listContainer.ReplaceOptimizedList(newList);
+								listContainer = new OptimizedListContainer(File.ReadAllBytes(listContainerPath));
+							}
+							else
+							{
+								listContainer = new OptimizedListContainer(packageName);
+							}
+
+
+							OptimizedList newList = new OptimizedList(packageList.Key, optimizedList);
+							if (listContainer.ContainsPackageListfile(packageList.Key))
+							{
+								if (!listContainer.IsListSameAsStored(newList))
+								{
+									listContainer.ReplaceOptimizedList(newList);
+								}
+							}
+							else
+							{
+								listContainer.AddOptimizedList(newList);
+							}
+
+							optimizedListContainers.Add(listContainer);
+						}
+
+						// Save the new lists
+						Log(options, "Saving optimized lists...", LogLevel.Info, true);
+
+						if (options.Format == OutputFormat.Flatfile)
+						{
+							foreach (OptimizedListContainer listContainer in optimizedListContainers)
+							{
+								Log(options, $"Saving lists for {listContainer.PackageName}...");
+
+								foreach (KeyValuePair<byte[], OptimizedList> optimizedListPair in listContainer.OptimizedLists)
+								{
+									string packageHash = BitConverter.ToString(optimizedListPair.Value.PackageHash).Replace("-", "");
+
+									File.WriteAllLines(
+										$"{options.OutputPath}{Path.DirectorySeparatorChar}(listfile)-{listContainer.PackageName}-{packageHash}.txt",
+										optimizedListPair.Value.OptimizedPaths);
+								}
 							}
 						}
 						else
 						{
-							listContainer.AddOptimizedList(newList);
-						}
-
-						OptimizedListContainers.Add(listContainer);
-					}
-
-					// Save the new lists
-					Log(options, "Saving optimized lists...", LogLevel.Info, true);
-
-					if (options.Format == OutputFormat.Flatfile)
-					{
-						foreach (OptimizedListContainer listContainer in OptimizedListContainers)
-						{
-							Log(options, $"Saving lists for {listContainer.PackageName}...");
-
-							foreach (KeyValuePair<byte[], OptimizedList> optimizedListPair in listContainer.OptimizedLists)
+							foreach (OptimizedListContainer listContainer in optimizedListContainers)
 							{
-								string packageHash = BitConverter.ToString(optimizedListPair.Value.PackageHash).Replace("-", "");
-
-								File.WriteAllLines(
-									$"{options.OutputPath}{Path.DirectorySeparatorChar}(listfile)-{listContainer.PackageName}-{packageHash}.txt",
-									optimizedListPair.Value.OptimizedPaths);
+								Log(options, $"Saving lists for {listContainer.PackageName}...");
+								File.WriteAllBytes(
+									$"{options.OutputPath}{Path.DirectorySeparatorChar}{listContainer.PackageName}.{OptimizedListContainer.Extension}",
+									listContainer.Serialize());
 							}
 						}
-					}
-					else
-					{
-						foreach (OptimizedListContainer listContainer in OptimizedListContainers)
-						{
-							Log(options, $"Saving lists for {listContainer.PackageName}...");
-							File.WriteAllBytes(
-								$"{options.OutputPath}{Path.DirectorySeparatorChar}{listContainer.PackageName}.{OptimizedListContainer.Extension}",
-								listContainer.GetBytes());
-						}
-					}
 
-
-					//Save the current dictionary
-					Log(options, "Saving dictionary...");
-					File.WriteAllBytes(options.DictionaryPath, ListDictionary.GetBytes());
+						//Save the current dictionary
+						Log(options, "Saving dictionary...");
+						File.WriteAllBytes(options.DictionaryPath, listDictionary.Serialize());
+						break;
+					}
 				}
 			}
 			else
@@ -494,7 +435,75 @@ namespace listtools
 			// Get all file paths from directory pointed to
 			// Store all paths in the specified output format (optimized or flatfile)
 
-			Environment.Exit(EXIT_SUCCESS);
+			Environment.Exit(ExitSuccess);
+		}
+
+		private static void PerformSanityChecks(Options options)
+		{
+			if (!Directory.Exists(options.InputPath))
+			{
+				Log(options, "The input directory did not exist.", LogLevel.Error);
+				Environment.Exit(ExitFailureNoInput);
+			}
+
+			if (Directory.GetFiles(options.InputPath).Length <= 0)
+			{
+				Log(options, "The input directory did not contain any files.", LogLevel.Error);
+				Environment.Exit(ExitFailureNoInput);
+			}
+
+			if (string.IsNullOrEmpty(options.OutputPath))
+			{
+				Log(options, "The output directory must not be empty.", LogLevel.Error);
+				Environment.Exit(ExitFailureNoOutput);
+			}
+
+			if (!Directory.Exists(Directory.GetParent(options.DictionaryPath).FullName))
+			{
+				Directory.CreateDirectory(Directory.GetParent(options.DictionaryPath).FullName);
+			}
+
+			if (!options.IsUsingDefaultDictionary && !File.Exists(options.DictionaryPath))
+			{
+				Log(options, "The selected dictionary did not exist.", LogLevel.Error);
+				Environment.Exit(ExitFailureNoDictionary);
+			}
+
+			if (!options.DictionaryPath.EndsWith(ListfileDictionary.Extension))
+			{
+				Log(options, "The selected dictionary did not end with a valid extension.", LogLevel.Error);
+				Environment.Exit(ExitFailureNoDictionary);
+			}
+
+			if (!Directory.Exists(options.OutputPath))
+			{
+				Directory.CreateDirectory(options.OutputPath);
+			}
+		}
+
+		private static void GenerateListfile(Options options)
+		{
+			Log(options, $"Generating new listfile from directory {options.InputPath}");
+
+			using (FileStream fs = File.Create($"{options.OutputPath}{Path.DirectorySeparatorChar}(listfile)"))
+			{
+				using (StreamWriter sw = new StreamWriter(fs))
+				{
+					foreach (string path in Directory.EnumerateFiles(options.InputPath, "*", SearchOption.AllDirectories))
+					{
+						string childPath = path
+							.Replace(options.InputPath, "")
+							.TrimStart(Path.DirectorySeparatorChar)
+							.Replace('/', '\\');
+
+						Log(options, $"Found path {path}, writing path {childPath}.");
+
+						sw.WriteLine(childPath);
+
+						sw.Flush();
+					}
+				}
+			}
 		}
 
 		private static string ShowTerm(long totalTerms, long termProgress, KeyValuePair<string,
@@ -542,7 +551,7 @@ namespace listtools
 			}
 
 			string input = Console.ReadLine();
-			if (String.IsNullOrEmpty(input))
+			if (string.IsNullOrEmpty(input))
 			{
 				if (confirmDialog)
 				{
@@ -559,11 +568,11 @@ namespace listtools
 			}
 		}
 
-		private static void PrintArchiveNames(IEnumerable<string> ArchivePaths)
+		private static void PrintArchiveNames(IEnumerable<string> archivePaths)
 		{
-			foreach (string ArchivePath in ArchivePaths)
+			foreach (string archivePath in archivePaths)
 			{
-				Console.WriteLine($"\t* {Path.GetFileName(ArchivePath)}");
+				Console.WriteLine($"\t* {Path.GetFileName(archivePath)}");
 			}
 		}
 
@@ -575,26 +584,5 @@ namespace listtools
 				Console.WriteLine($"[{logLevel}]: {logString}");
 			}
 		}
-	}
-
-	/// <summary>
-	/// The logging level.
-	/// </summary>
-	public enum LogLevel
-	{
-		/// <summary>
-		/// Information. Standard output.
-		/// </summary>
-		Info = ConsoleColor.White,
-
-		/// <summary>
-		/// Warnings. Yellow, considered level 2.
-		/// </summary>
-		Warning = ConsoleColor.Yellow,
-
-		/// <summary>
-		/// Errors. Red, will exit when thrown.
-		/// </summary>
-		Error = ConsoleColor.Red,
 	}
 }
