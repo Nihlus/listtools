@@ -44,6 +44,8 @@ namespace listtools
 			Options options = new Options();
 			if (Parser.Default.ParseArguments(args, options))
 			{
+				Console.Clear();
+
 				// Fix dictionary path if needed
 				if (string.IsNullOrEmpty(options.DictionaryPath))
 				{
@@ -200,7 +202,12 @@ namespace listtools
 							bool quitFixing = false;
 
 							long totalCount = listDictionary.LowScoreEntries.Count();
-							foreach (KeyValuePair<string, ListfileDictionaryEntry> dictionaryEntry in listDictionary.LowScoreEntries)
+							foreach (KeyValuePair<string, ListfileDictionaryEntry> dictionaryEntry in listDictionary.LowScoreEntries
+									.OrderBy(e => e.Value.Term.Length))
+									//.ThenBy(e => e.Value.Term))
+							//var invalidCompounds = listDictionary.HighScoreEntries.Where(e => e.Key.Contains("MULLGORE")).ToList();
+							//long totalCount = invalidCompounds.Count();
+							//foreach(var dictionaryEntry in invalidCompounds)
 							{
 								if (quitFixing)
 								{
@@ -225,105 +232,58 @@ namespace listtools
 
 									if (!string.IsNullOrEmpty(newTerm))
 									{
-										// The user replied with one of the two options, or a malfored word
-										if (newTerm == "1")
+										switch (newTerm)
 										{
-											newTerm = TermScore.Guess(dictionaryEntry.Value.Term);
-											// The user entered a valid term
-											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
-
-											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
+											case "1": // TermScore
 											{
-												// Positive confirmation, save the new word.
-												dictionaryEntry.Value.SetTerm(newTerm);
-												dictionaryEntry.Value.SetScore(float.MaxValue);
-
-												listDictionary.AddNewTermWords(newTerm);
-
-												// Go to the next term
+												newTerm = TermScore.Guess(dictionaryEntry.Value.Term);
 												break;
 											}
-											else
+											case "2": // Dictionary
 											{
-												// The user didn't confirm the word. Try again.
+												newTerm = listDictionary.Guess(dictionaryEntry.Value.Term);
+												break;
+											}
+											case "3": // Hybrid
+											{
+												newTerm = listDictionary.Guess(TermScore.Guess(dictionaryEntry.Value.Term));
+												break;
+											}
+											case "4": // Keep
+											{
+												newTerm = dictionaryEntry.Value.Term;
+												break;
+											}
+											case "5": // Correct compound word
+											{
+												CorrectCompoundWord(listDictionary, dictionaryEntry.Value);
 												continue;
+											}
+											default: // Invalid
+											{
+												if (newTerm.ToUpperInvariant() != dictionaryEntry.Key)
+												{
+													restartWordError = true;
+													continue;
+												}
+
+												break;
 											}
 										}
 
-										if (newTerm == "2")
+										// The user entered a valid term
+										string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
+
+										if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
 										{
-											newTerm = listDictionary.Guess(dictionaryEntry.Value.Term);
-											// The user entered a valid term
-											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
+											// Positive confirmation, save the new word.
+											dictionaryEntry.Value.SetTerm(newTerm);
+											dictionaryEntry.Value.SetScore(float.MaxValue);
 
-											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
-											{
-												// Positive confirmation, save the new word.
-												dictionaryEntry.Value.SetTerm(newTerm);
-												dictionaryEntry.Value.SetScore(float.MaxValue);
+											listDictionary.AddNewTermWords(newTerm);
 
-												listDictionary.AddNewTermWords(newTerm);
-
-												// Go to the next term
-												break;
-											}
-											else
-											{
-												// The user didn't confirm the word. Try again.
-												continue;
-											}
-										}
-
-										if (newTerm == "3")
-										{
-											// The user requested to keep the word
-											newTerm = dictionaryEntry.Value.Term;
-											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
-
-											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" ||
-											    confirmResponse.ToUpperInvariant() == "Y")
-											{
-												// Positive confirmation, save the new word.
-												dictionaryEntry.Value.SetTerm(newTerm);
-												dictionaryEntry.Value.SetScore(float.MaxValue);
-
-												// Go to the next term
-												break;
-											}
-											else
-											{
-												// The user didn't confirm the word. Try again.
-												continue;
-											}
-										}
-
-										if (newTerm.ToUpperInvariant() == dictionaryEntry.Key)
-										{
-											// The user entered a valid term
-											string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
-
-											if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
-											{
-												// Positive confirmation, save the new word.
-												dictionaryEntry.Value.SetTerm(newTerm);
-												dictionaryEntry.Value.SetScore(float.MaxValue);
-
-												listDictionary.AddNewTermWords(newTerm);
-
-												// Go to the next term
-												break;
-											}
-											else
-											{
-												// The user didn't confirm the word. Try again.
-												continue;
-											}
-										}
-										else
-										{
-											// The word the user entered was malformed or didn't match the original word.
-											restartWordError = true;
-											continue;
+											// Go to the next term
+											break;
 										}
 									}
 								}
@@ -339,7 +299,7 @@ namespace listtools
 							Log(options, $"Optimizing lists for {packageName}...");
 
 							List<string> unoptimizedList = packageList.Value;
-							List<string> optimizedList = listDictionary.OptimizeList(unoptimizedList);
+							List<string> optimizedList = listDictionary.OptimizeList(unoptimizedList).ToList();
 
 							string listContainerPath =
 								$"{options.OutputPath}{Path.DirectorySeparatorChar}{packageName}.{OptimizedListContainer.Extension}";
@@ -438,6 +398,84 @@ namespace listtools
 			Environment.Exit(ExitSuccess);
 		}
 
+		private static void CorrectCompoundWord(ListfileDictionary dictionary, ListfileDictionaryEntry entry)
+		{
+			bool wasGivenNewTermNonexistent = false;
+			while (true)
+			{
+				Console.Clear();
+				Console.WriteLine("========");
+				Console.WriteLine("Correcting compound word.");
+				Console.WriteLine("========");
+				Console.WriteLine($"| Hint term: {entry.Term}");
+				Console.WriteLine($"|");
+				Console.WriteLine($"| Please enter a corrected term or composite term.");
+				Console.WriteLine("========");
+				if (wasGivenNewTermNonexistent)
+				{
+					Console.WriteLine($"| Error: The corrected term did not match a term already in the dictionary.");
+				}
+				Console.Write("> [input/q]: ");
+
+				string userInput = Console.ReadLine();
+				if (string.IsNullOrEmpty(userInput))
+				{
+					continue;
+				}
+
+				if (userInput.ToUpperInvariant() == "QUIT" || userInput.ToUpperInvariant() == "Q")
+				{
+					return;
+				}
+
+				if (!dictionary.ContainsTerm(userInput))
+				{
+					wasGivenNewTermNonexistent = true;
+					continue;
+				}
+				wasGivenNewTermNonexistent = false;
+
+				List<string> newTerms = ListfileDictionary.GetWordsFromTerm(userInput).ToList();
+
+				Console.Clear();
+				Console.WriteLine("========");
+				Console.WriteLine("Correcting compound word.");
+				Console.WriteLine("========");
+				Console.WriteLine($"| Hint term: {entry.Term}");
+				Console.WriteLine($"|");
+				Console.WriteLine($"| Processing the new term produced the following composite terms.");
+				foreach (string term in newTerms)
+				{
+					Console.WriteLine($"| · {term}");
+				}
+				Console.WriteLine($"|");
+				Console.WriteLine($"| Is this correct? If yes, the old term will be replaced by these composite terms.");
+				Console.WriteLine($"| Optionally, you can delete the old term without adding new terms.");
+				Console.WriteLine("========");
+				Console.Write("> [y/d/N]: ");
+
+				string confirmNew = Console.ReadLine();
+				if (string.IsNullOrEmpty(confirmNew)
+				    || confirmNew.ToUpperInvariant() != "YES"
+				    || confirmNew.ToUpperInvariant() != "Y"
+				    || confirmNew.ToUpperInvariant() != "DELETE"
+				    || confirmNew.ToUpperInvariant() != "D")
+				{
+					continue;
+				}
+
+				// Terms are OK
+				dictionary.DeleteTerm(userInput);
+
+				if (confirmNew.ToUpperInvariant() == "YES" || confirmNew.ToUpperInvariant() == "Y")
+				{
+					dictionary.AddNewTermWords(userInput);
+				}
+
+				break;
+			}
+		}
+
 		private static void PerformSanityChecks(Options options)
 		{
 			if (!Directory.Exists(options.InputPath))
@@ -520,17 +558,19 @@ namespace listtools
 			Console.WriteLine($"| Current word key: {termEntryPair.Key}");
 			Console.WriteLine($"| Current word value: {termEntryPair.Value.Term}");
 			Console.WriteLine($"| Current word score: {termEntryPair.Value.Score}");
-			Console.WriteLine("|");
+			Console.WriteLine($"|");
 			if (confirmDialog)
 			{
 				Console.WriteLine($"| New word value: {newWord}");
-				Console.WriteLine("| New word score (manually set): Maximum");
+				Console.WriteLine($"| New word score (manually set): Maximum");
 			}
 			else
 			{
 				Console.WriteLine($"| [1] Guessed correct word (TermScore)\t: {TermScore.Guess(termEntryPair.Value.Term)}");
 				Console.WriteLine($"| [2] Guessed correct word (Dictionary)\t: {dictionary.Guess(termEntryPair.Value.Term)}");
-				Console.WriteLine($"| [3] Keep value");
+				Console.WriteLine($"| [3] Guessed correct word (Hybrid)\t: {dictionary.Guess(TermScore.Guess(termEntryPair.Value.Term))}");
+				Console.WriteLine($"| [4] Keep value");
+				Console.WriteLine($"| [5] Correct compound term");
 			}
 
 			if (restartError)
@@ -546,8 +586,8 @@ namespace listtools
 			}
 			else
 			{
-				Console.WriteLine("Default: Dictionary");
-				Console.Write("> [1/2/3/input/q]: ");
+				Console.WriteLine("Default: Hybrid");
+				Console.Write("> [1/2/3/4/5/input/q]: ");
 			}
 
 			string input = Console.ReadLine();
@@ -557,15 +597,11 @@ namespace listtools
 				{
 					return "Y";
 				}
-				else
-				{
-					return "2";
-				}
+
+				return "3";
 			}
-			else
-			{
-				return input;
-			}
+
+			return input;
 		}
 
 		private static void PrintArchiveNames(IEnumerable<string> archivePaths)

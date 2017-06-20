@@ -1,73 +1,43 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
-    <ProjectGuid>{4A24E736-FC2E-4B28-B95D-C6797BFE256C}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <RootNamespace>listtools</RootNamespace>
     <AssemblyName>listtools</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\listtools.key</AssemblyOriginatorKeyFile>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug</OutputPath>
-    <DefineConstants>DEBUG;</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <Externalconsole>true</Externalconsole>
-    <PlatformTarget>x86</PlatformTarget>
-    <DocumentationFile>bin\Debug\listtools.xml</DocumentationFile>
-    <Commandlineparameters>--dictionary "$DICTIONARY_PATH" --input "$GAME_PATH" --output "$OUTPUT_PATH" --format $OUTPUT_FORMAT --task-type $TASK_TYPE</Commandlineparameters>
     <EnvironmentVariables>
-      <EnvironmentVariables>
-        <Variable name="DICTIONARY_PATH" value="/home/jarl/Programming/liblistfile/liblistfile/Dictionary/dictionary.dic" />
-        <Variable name="GAME_PATH" value="/media/storage2/Games/World of Warcraft WOTLK" />
-        <Variable name="OUTPUT_PATH" value="/home/jarl/Desktop/listtools" />
-        <Variable name="OUTPUT_FORMAT" value="compressed" />
-        <Variable name="TASK_TYPE" value="optimize" />
-      </EnvironmentVariables>
+      <Variable name="DICTIONARY_PATH" value="/home/jarl/Programming/liblistfile/liblistfile/Dictionary/dictionary.dic" />
+      <Variable name="GAME_PATH" value="/media/storage2/Games/World of Warcraft WOTLK" />
+      <Variable name="OUTPUT_PATH" value="/home/jarl/Desktop/listtools" />
+      <Variable name="OUTPUT_FORMAT" value="compressed" />
+      <Variable name="TASK_TYPE" value="optimize" />
     </EnvironmentVariables>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release</OutputPath>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <Externalconsole>true</Externalconsole>
-    <PlatformTarget>x86</PlatformTarget>
-    <DocumentationFile>bin\Release\listtools.xml</DocumentationFile>
+  <PropertyGroup>
+    <Title>listtools</Title>
+    <Authors>Jarl Gullberg</Authors>
+    <Version>2.0.1</Version>
+    <Description>Command-line tool for optimizing and generating lists and node trees from listfiles.</Description>
+    <Copyright>Copyright Jarl Gullberg 2017</Copyright>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PackageVersion>2.0.1-preview1</PackageVersion>
+    <PackageId>listtools</PackageId>
+    <IsTool>true</IsTool>
+    <PackageLicenseUrl>https://www.gnu.org/licenses/gpl-3.0.en.html</PackageLicenseUrl>
+    <PackageProjectUrl>http://wowdev.tools/</PackageProjectUrl>
+    <PackageReleaseNotes>Initial release on NuGet and port to .NET Standard 2.0.</PackageReleaseNotes>
+    <PackageTags>cross-platform;file-format</PackageTags>
+    <PackageOutputPath>../nuget</PackageOutputPath>
+    <IncludeSymbols>true</IncludeSymbols>
+    <RepositoryUrl>https://github.com/Nihlus/listtools</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System" />
-    <Reference Include="CommandLine">
-      <HintPath>$(SolutionDir)\packages\CommandLineParser.1.9.71\lib\net45\CommandLine.dll</HintPath>
-    </Reference>
+    <PackageReference Include="CommandLineParser" Version="1.9.71" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="LogLevel.cs" />
-    <Compile Include="OutputFormat.cs" />
-    <Compile Include="Program.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Options.cs" />
-    <Compile Include="TaskType.cs" />
-  </ItemGroup>
-  <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
-  <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\lib\liblistfile\liblistfile\liblistfile.csproj">
-      <Project>{CE32160A-4A61-4813-93A5-D9DFDD7AB470}</Project>
-      <Name>liblistfile</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\lib\liblistfile\lib\libwarcraft\libwarcraft\libwarcraft.csproj">
-      <Project>{DA06A44E-A67B-46C7-B07D-E90AEBED0502}</Project>
-      <Name>libwarcraft</Name>
-    </ProjectReference>
+    <ProjectReference Include="..\lib\liblistfile\liblistfile\liblistfile.csproj" />
+    <ProjectReference Include="..\lib\libwarcraft\libwarcraft\libwarcraft.csproj" />
   </ItemGroup>
 </Project>
