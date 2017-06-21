@@ -35,9 +35,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="1.9.71" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="$(SolutionDir)\lib\liblistfile\liblistfile\liblistfile.csproj" />
-    <ProjectReference Include="$(SolutionDir)\lib\libwarcraft\libwarcraft\libwarcraft.csproj" />
+    <PackageReference Include="liblistfile">
+      <Version>2.0.0-preview1</Version>
+    </PackageReference>
   </ItemGroup>
 </Project>
