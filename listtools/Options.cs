@@ -74,7 +74,7 @@ namespace listtools
 		/// Gets or sets the task type.
 		/// </summary>
 		/// <value>The task type.</value>
-		[Option('t', "task-type", DefaultValue = TaskType.Generate,
+		[Option('t', "task-type", Default = TaskType.Generate,
 			HelpText = "Sets the task the program should perform. Valid options are \"generate\" and \"optimize\". The options are case-insensitive.")]
 		public TaskType SelectedTask
 		{
@@ -86,7 +86,7 @@ namespace listtools
 		/// Gets or sets the output format.
 		/// </summary>
 		/// <value>The input path.</value>
-		[Option('f', "format", DefaultValue = OutputFormat.Flatfile,
+		[Option('f', "format", Default = OutputFormat.Flatfile,
 			HelpText = "Sets the output format of listfiles. Valid options are \"flatfile\" and \"compressed\". When generating a listfile, only flatfiles can be generated. The options are case-insensitive.")]
 		public OutputFormat Format
 		{
@@ -98,20 +98,9 @@ namespace listtools
 		/// Gets or sets a value indicating whether this <see cref="listtools.Options"/> is verbose.
 		/// </summary>
 		/// <value><c>true</c> if verbose; otherwise, <c>false</c>.</value>
-		[Option('v', "verbose", DefaultValue = true,
+		[Option('v', "verbose", Default = true,
 			HelpText = "Prints all messages to standard output.")]
 		public bool Verbose
-		{
-			get;
-			set;
-		}
-
-		/// <summary>
-		/// Gets or sets the last state of the parser.
-		/// </summary>
-		/// <value>The last state of the parser.</value>
-		[ParserState]
-		public IParserState LastParserState
 		{
 			get;
 			set;
@@ -140,15 +129,6 @@ namespace listtools
 				                        Path.DirectorySeparatorChar, ListfileDictionary.Extension);
 
 			return dictionaryPath;
-		}
-
-		/// <summary>
-		/// Gets the generated help text.
-		/// </summary>
-		/// <returns>The usage.</returns>
-		public string GetUsage()
-		{
-			return HelpText.AutoBuild(this, current => HelpText.DefaultParsingErrorsHandler(this, current));
 		}
 	}
 }

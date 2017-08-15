@@ -34,9 +34,7 @@
     <RepositoryUrl>https://github.com/Nihlus/listtools</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" Version="1.9.71" />
-    <PackageReference Include="liblistfile">
-      <Version>2.0.0-preview1</Version>
-    </PackageReference>
+    <PackageReference Include="CommandLineParser" Version="2.1.1-beta" />
+    <PackageReference Include="liblistfile" Version="2.0.0" />
   </ItemGroup>
 </Project>

@@ -39,338 +39,336 @@ namespace listtools
 		private const int ExitFailureNoDictionary = 3;
 		private const int ExitFailureNoOutput = 4;
 
+		private static Options toolOptions;
+
 		public static void Main(string[] args)
 		{
-			Options options = new Options();
-			if (Parser.Default.ParseArguments(args, options))
+			Parser.Default.ParseArguments<Options>(args)
+				.WithParsed(result => toolOptions = result)
+				.WithNotParsed(error => Environment.Exit(-1));
+
+			Console.Clear();
+
+			// Fix dictionary path if needed
+			if (string.IsNullOrEmpty(toolOptions.DictionaryPath))
 			{
-				Console.Clear();
+				toolOptions.DictionaryPath = Options.GetDefaultDictionaryPath();
+			}
 
-				// Fix dictionary path if needed
-				if (string.IsNullOrEmpty(options.DictionaryPath))
+			PerformSanityChecks(toolOptions);
+
+			switch (toolOptions.SelectedTask)
+			{
+				case TaskType.Generate:
 				{
-					options.DictionaryPath = Options.GetDefaultDictionaryPath();
+					GenerateListfile(toolOptions);
+					break;
 				}
-
-				PerformSanityChecks(options);
-
-				switch (options.SelectedTask)
+				case TaskType.Optimize:
 				{
-					case TaskType.Generate:
+					Log(toolOptions, $"Optimizing archive listfiles in directory {toolOptions.InputPath}...");
+
+					ListfileDictionary listDictionary;
+					if (File.Exists(toolOptions.DictionaryPath))
 					{
-						GenerateListfile(options);
-						break;
+						Log(toolOptions, "Loading dictionary...");
+						listDictionary = new ListfileDictionary(File.ReadAllBytes(toolOptions.DictionaryPath));
 					}
-					case TaskType.Optimize:
+					else
 					{
-						Log(options, $"Optimizing archive listfiles in directory {options.InputPath}...");
+						Log(toolOptions, "Creating new dictionary...");
+						listDictionary = new ListfileDictionary();
+					}
 
-						ListfileDictionary listDictionary;
-						if (File.Exists(options.DictionaryPath))
+					Log(toolOptions, "Loading packages...");
+
+					List<string> packagePaths = Directory.EnumerateFiles(toolOptions.InputPath, "*.*", SearchOption.AllDirectories)
+						.OrderBy(a => a)
+						.Where(s => s.EndsWith(".mpq") || s.EndsWith(".MPQ"))
+						.ToList();
+
+					if (packagePaths.Count <= 0)
+					{
+						Log(toolOptions, "No game packages were found in the input directory.", LogLevel.Warning);
+						Environment.Exit(ExitFailureNoInput);
+					}
+
+					packagePaths.Sort();
+					Log(toolOptions, "Packages found: ");
+					PrintArchiveNames(packagePaths);
+
+					// Load the archives with their hashes and listfiles
+					Dictionary<byte[], List<string>> packageLists = new Dictionary<byte[], List<string>>();
+					Dictionary<byte[], string> packageNames = new Dictionary<byte[], string>();
+
+					foreach (string packagePath in packagePaths)
+					{
+						// Hash the hash table and extract the listfile
+						byte[] md5Hash;
+						List<string> packageListfile;
+						using (MPQ package = new MPQ(File.OpenRead(packagePath)))
 						{
-							Log(options, "Loading dictionary...");
-							listDictionary = new ListfileDictionary(File.ReadAllBytes(options.DictionaryPath));
-						}
-						else
-						{
-							Log(options, "Creating new dictionary...");
-							listDictionary = new ListfileDictionary();
-						}
-
-						Log(options, "Loading packages...");
-
-						List<string> packagePaths = Directory.EnumerateFiles(options.InputPath, "*.*", SearchOption.AllDirectories)
-							.OrderBy(a => a)
-							.Where(s => s.EndsWith(".mpq") || s.EndsWith(".MPQ"))
-							.ToList();
-
-						if (packagePaths.Count <= 0)
-						{
-							Log(options, "No game packages were found in the input directory.", LogLevel.Warning);
-							Environment.Exit(ExitFailureNoInput);
-						}
-
-						packagePaths.Sort();
-						Log(options, "Packages found: ");
-						PrintArchiveNames(packagePaths);
-
-						// Load the archives with their hashes and listfiles
-						Dictionary<byte[], List<string>> packageLists = new Dictionary<byte[], List<string>>();
-						Dictionary<byte[], string> packageNames = new Dictionary<byte[], string>();
-
-						foreach (string packagePath in packagePaths)
-						{
-							// Hash the hash table and extract the listfile
-							byte[] md5Hash;
-							List<string> packageListfile;
-							using (MPQ package = new MPQ(File.OpenRead(packagePath)))
+							Log(toolOptions, $"Hashing filetable and extracting listfile of {Path.GetFileName(packagePath)}...");
+							using (MD5 md5 = MD5.Create())
 							{
-								Log(options, $"Hashing filetable and extracting listfile of {Path.GetFileName(packagePath)}...");
-								using (MD5 md5 = MD5.Create())
-								{
-									md5Hash = md5.ComputeHash(package.ArchiveHashTable.Serialize());
-								}
-								packageListfile = package.GetFileList();
+								md5Hash = md5.ComputeHash(package.ArchiveHashTable.Serialize());
 							}
-
-							packageLists.Add(md5Hash, packageListfile);
-							packageNames.Add(md5Hash, Path.GetFileNameWithoutExtension(packagePath));
+							packageListfile = package.GetFileList();
 						}
 
-						// Populate dictionary
-						foreach (KeyValuePair<byte[], List<string>> packageList in packageLists)
-						{
-							long wordsUpdated = 0;
-							foreach (string path in packageList.Value)
-							{
-								// For every path in the listfile, add the terms from each folder or filename
-								string[] foldersAndFile = path.Split('\\');
-								for (int i = 0; i < foldersAndFile.Length; ++i)
-								{
-									string term = foldersAndFile[i];
+						packageLists.Add(md5Hash, packageListfile);
+						packageNames.Add(md5Hash, Path.GetFileNameWithoutExtension(packagePath));
+					}
 
-									// Add the term to the dictionary
-									if (listDictionary.UpdateTermEntry(term))
+					// Populate dictionary
+					foreach (KeyValuePair<byte[], List<string>> packageList in packageLists)
+					{
+						long wordsUpdated = 0;
+						foreach (string path in packageList.Value)
+						{
+							// For every path in the listfile, add the terms from each folder or filename
+							string[] foldersAndFile = path.Split('\\');
+							for (int i = 0; i < foldersAndFile.Length; ++i)
+							{
+								string term = foldersAndFile[i];
+
+								// Add the term to the dictionary
+								if (listDictionary.UpdateTermEntry(term))
+								{
+									++wordsUpdated;
+								}
+
+								// Some special cases with MD5 hashes - the terms for the filenames here are set to full score right away
+								if (i == foldersAndFile.Length - 1)
+								{
+									if (path.ToLowerInvariant().StartsWith("textures\\bakednpctextures\\"))
 									{
-										++wordsUpdated;
+										if (listDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), float.MaxValue))
+										{
+											++wordsUpdated;
+										}
 									}
 
-									// Some special cases with MD5 hashes - the terms for the filenames here are set to full score right away
-									if (i == foldersAndFile.Length - 1)
+									if (path.ToLowerInvariant().StartsWith("textures\\minimap\\") && !path.ToLowerInvariant().EndsWith("md5translate.trs"))
 									{
-										if (path.ToLowerInvariant().StartsWith("textures\\bakednpctextures\\"))
+										if (listDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), float.MaxValue))
 										{
-											if (listDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), float.MaxValue))
-											{
-												++wordsUpdated;
-											}
-										}
-
-										if (path.ToLowerInvariant().StartsWith("textures\\minimap\\") && !path.ToLowerInvariant().EndsWith("md5translate.trs"))
-										{
-											if (listDictionary.SetTermScore(Path.GetFileNameWithoutExtension(term), float.MaxValue))
-											{
-												++wordsUpdated;
-											}
+											++wordsUpdated;
 										}
 									}
 								}
 							}
-							Log(options, $"Successfully loaded package listfile into dictionary. {wordsUpdated} words updated.");
+						}
+						Log(toolOptions, $"Successfully loaded package listfile into dictionary. {wordsUpdated} words updated.");
+					}
+
+					// Manual dictionary fixing
+					bool bShouldFix = false;
+					float scoreTolerance = 0;
+					while (true)
+					{
+						Console.Clear();
+						Log(toolOptions, "The dictionary has been populated. At this point, you may optionally fix some entries with low scores.", LogLevel.Info, true);
+						Console.WriteLine("Fix low-score entries? [y/N]: ");
+						string userResponse = Console.ReadLine();
+
+
+						if (string.IsNullOrEmpty(userResponse))
+						{
+							continue;
 						}
 
-						// Manual dictionary fixing
-						bool bShouldFix = false;
-						float scoreTolerance = 0;
-						while (true)
+						if (userResponse.ToUpperInvariant() == "YES" || userResponse.ToUpperInvariant() == "Y")
 						{
 							Console.Clear();
-							Log(options, "The dictionary has been populated. At this point, you may optionally fix some entries with low scores.", LogLevel.Info, true);
-							Console.WriteLine("Fix low-score entries? [y/N]: ");
-							string userResponse = Console.ReadLine();
-
-
-							if (string.IsNullOrEmpty(userResponse))
-							{
-								continue;
-							}
-
-							if (userResponse.ToUpperInvariant() == "YES" || userResponse.ToUpperInvariant() == "Y")
+							Console.WriteLine("(Hint: A score of 0 usually means an all-caps entry. 0.5 will include any entries which are all lower-case.)");
+							Console.WriteLine("Enter a threshold floating-point score to be used: ");
+							while (!float.TryParse(Console.ReadLine(), out scoreTolerance))
 							{
 								Console.Clear();
-								Console.WriteLine("(Hint: A score of 0 usually means an all-caps entry. 0.5 will include any entries which are all lower-case.)");
-								Console.WriteLine("Enter a threshold floating-point score to be used: ");
-								while (!float.TryParse(Console.ReadLine(), out scoreTolerance))
-								{
-									Console.Clear();
-									Console.WriteLine("Please enter a valid numeric value.");
-								}
-
-								bShouldFix = true;
-
-								break;
+								Console.WriteLine("Please enter a valid numeric value.");
 							}
 
-							Console.Clear();
+							bShouldFix = true;
+
 							break;
 						}
 
-						if (bShouldFix)
-						{
-							listDictionary.EntryLowScoreTolerance = scoreTolerance;
-							long progressCount = 0;
-							bool quitFixing = false;
+						Console.Clear();
+						break;
+					}
 
-							long totalCount = listDictionary.LowScoreEntries.Count();
-							foreach (KeyValuePair<string, ListfileDictionaryEntry> dictionaryEntry in listDictionary.LowScoreEntries
-									.OrderBy(e => e.Value.Term.Length))
-									//.ThenBy(e => e.Value.Term))
-							//var invalidCompounds = listDictionary.HighScoreEntries.Where(e => e.Key.Contains("MULLGORE")).ToList();
-							//long totalCount = invalidCompounds.Count();
-							//foreach(var dictionaryEntry in invalidCompounds)
+					if (bShouldFix)
+					{
+						listDictionary.EntryLowScoreTolerance = scoreTolerance;
+						long progressCount = 0;
+						bool quitFixing = false;
+
+						long totalCount = listDictionary.LowScoreEntries.Count();
+						foreach (KeyValuePair<string, ListfileDictionaryEntry> dictionaryEntry in listDictionary.LowScoreEntries
+								.OrderBy(e => e.Value.Term.Length))
+								//.ThenBy(e => e.Value.Term))
+						//var invalidCompounds = listDictionary.HighScoreEntries.Where(e => e.Key.Contains("MULLGORE")).ToList();
+						//long totalCount = invalidCompounds.Count();
+						//foreach(var dictionaryEntry in invalidCompounds)
+						{
+							if (quitFixing)
 							{
-								if (quitFixing)
+								break;
+							}
+
+							bool restartWordError = false;
+							++progressCount;
+							while (true)
+							{
+								// Display the term to the user with options
+								string newTerm = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, false, "", restartWordError);
+
+								if (newTerm.ToUpperInvariant() == "QUIT" || newTerm.ToUpperInvariant() == "Q")
 								{
+									//Save the current dictionary
+									Log(toolOptions, "Saving dictionary and quitting...");
+									File.WriteAllBytes(toolOptions.DictionaryPath, listDictionary.Serialize());
+									quitFixing = true;
 									break;
 								}
 
-								bool restartWordError = false;
-								++progressCount;
-								while (true)
+								if (!string.IsNullOrEmpty(newTerm))
 								{
-									// Display the term to the user with options
-									string newTerm = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, false, "", restartWordError);
-
-									if (newTerm.ToUpperInvariant() == "QUIT" || newTerm.ToUpperInvariant() == "Q")
+									switch (newTerm)
 									{
-										//Save the current dictionary
-										Log(options, "Saving dictionary and quitting...");
-										File.WriteAllBytes(options.DictionaryPath, listDictionary.Serialize());
-										quitFixing = true;
-										break;
-									}
-
-									if (!string.IsNullOrEmpty(newTerm))
-									{
-										switch (newTerm)
+										case "1": // TermScore
 										{
-											case "1": // TermScore
+											newTerm = TermScore.Guess(dictionaryEntry.Value.Term);
+											break;
+										}
+										case "2": // Dictionary
+										{
+											newTerm = listDictionary.Guess(dictionaryEntry.Value.Term);
+											break;
+										}
+										case "3": // Hybrid
+										{
+											newTerm = listDictionary.Guess(TermScore.Guess(dictionaryEntry.Value.Term));
+											break;
+										}
+										case "4": // Keep
+										{
+											newTerm = dictionaryEntry.Value.Term;
+											break;
+										}
+										case "5": // Correct compound word
+										{
+											CorrectCompoundWord(listDictionary, dictionaryEntry.Value);
+											continue;
+										}
+										default: // Invalid
+										{
+											if (newTerm.ToUpperInvariant() != dictionaryEntry.Key)
 											{
-												newTerm = TermScore.Guess(dictionaryEntry.Value.Term);
-												break;
-											}
-											case "2": // Dictionary
-											{
-												newTerm = listDictionary.Guess(dictionaryEntry.Value.Term);
-												break;
-											}
-											case "3": // Hybrid
-											{
-												newTerm = listDictionary.Guess(TermScore.Guess(dictionaryEntry.Value.Term));
-												break;
-											}
-											case "4": // Keep
-											{
-												newTerm = dictionaryEntry.Value.Term;
-												break;
-											}
-											case "5": // Correct compound word
-											{
-												CorrectCompoundWord(listDictionary, dictionaryEntry.Value);
+												restartWordError = true;
 												continue;
 											}
-											default: // Invalid
-											{
-												if (newTerm.ToUpperInvariant() != dictionaryEntry.Key)
-												{
-													restartWordError = true;
-													continue;
-												}
 
-												break;
-											}
-										}
-
-										// The user entered a valid term
-										string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
-
-										if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
-										{
-											// Positive confirmation, save the new word.
-											dictionaryEntry.Value.SetTerm(newTerm);
-											dictionaryEntry.Value.SetScore(float.MaxValue);
-
-											listDictionary.AddNewTermWords(newTerm);
-
-											// Go to the next term
 											break;
 										}
 									}
+
+									// The user entered a valid term
+									string confirmResponse = ShowTerm(totalCount, progressCount, dictionaryEntry, listDictionary, true, newTerm);
+
+									if (string.IsNullOrEmpty(confirmResponse) || confirmResponse.ToUpperInvariant() == "YES" || confirmResponse.ToUpperInvariant() == "Y")
+									{
+										// Positive confirmation, save the new word.
+										dictionaryEntry.Value.SetTerm(newTerm);
+										dictionaryEntry.Value.SetScore(float.MaxValue);
+
+										listDictionary.AddNewTermWords(newTerm);
+
+										// Go to the next term
+										break;
+									}
 								}
 							}
 						}
+					}
 
-						// Optimize lists using dictionary
-						Log(options, "Optimizing lists using dictionary...", LogLevel.Info, true);
-						List<OptimizedListContainer> optimizedListContainers = new List<OptimizedListContainer>();
-						foreach (KeyValuePair<byte[], List<string>> packageList in packageLists)
+					// Optimize lists using dictionary
+					Log(toolOptions, "Optimizing lists using dictionary...", LogLevel.Info, true);
+					List<OptimizedListContainer> optimizedListContainers = new List<OptimizedListContainer>();
+					foreach (KeyValuePair<byte[], List<string>> packageList in packageLists)
+					{
+						string packageName = packageNames[packageList.Key];
+						Log(toolOptions, $"Optimizing lists for {packageName}...");
+
+						List<string> unoptimizedList = packageList.Value;
+						List<string> optimizedList = listDictionary.OptimizeList(unoptimizedList).ToList();
+
+						string listContainerPath =
+							$"{toolOptions.OutputPath}{Path.DirectorySeparatorChar}{packageName}.{OptimizedListContainer.Extension}";
+
+						OptimizedListContainer listContainer;
+						if (File.Exists(listContainerPath))
 						{
-							string packageName = packageNames[packageList.Key];
-							Log(options, $"Optimizing lists for {packageName}...");
-
-							List<string> unoptimizedList = packageList.Value;
-							List<string> optimizedList = listDictionary.OptimizeList(unoptimizedList).ToList();
-
-							string listContainerPath =
-								$"{options.OutputPath}{Path.DirectorySeparatorChar}{packageName}.{OptimizedListContainer.Extension}";
-
-							OptimizedListContainer listContainer;
-							if (File.Exists(listContainerPath))
-							{
-								listContainer = new OptimizedListContainer(File.ReadAllBytes(listContainerPath));
-							}
-							else
-							{
-								listContainer = new OptimizedListContainer(packageName);
-							}
-
-
-							OptimizedList newList = new OptimizedList(packageList.Key, optimizedList);
-							if (listContainer.ContainsPackageListfile(packageList.Key))
-							{
-								if (!listContainer.IsListSameAsStored(newList))
-								{
-									listContainer.ReplaceOptimizedList(newList);
-								}
-							}
-							else
-							{
-								listContainer.AddOptimizedList(newList);
-							}
-
-							optimizedListContainers.Add(listContainer);
+							listContainer = new OptimizedListContainer(File.ReadAllBytes(listContainerPath));
+						}
+						else
+						{
+							listContainer = new OptimizedListContainer(packageName);
 						}
 
-						// Save the new lists
-						Log(options, "Saving optimized lists...", LogLevel.Info, true);
 
-						if (options.Format == OutputFormat.Flatfile)
+						OptimizedList newList = new OptimizedList(packageList.Key, optimizedList);
+						if (listContainer.ContainsPackageListfile(packageList.Key))
 						{
-							foreach (OptimizedListContainer listContainer in optimizedListContainers)
+							if (!listContainer.IsListSameAsStored(newList))
 							{
-								Log(options, $"Saving lists for {listContainer.PackageName}...");
-
-								foreach (KeyValuePair<byte[], OptimizedList> optimizedListPair in listContainer.OptimizedLists)
-								{
-									string packageHash = BitConverter.ToString(optimizedListPair.Value.PackageHash).Replace("-", "");
-
-									File.WriteAllLines(
-										$"{options.OutputPath}{Path.DirectorySeparatorChar}(listfile)-{listContainer.PackageName}-{packageHash}.txt",
-										optimizedListPair.Value.OptimizedPaths);
-								}
+								listContainer.ReplaceOptimizedList(newList);
 							}
 						}
 						else
 						{
-							foreach (OptimizedListContainer listContainer in optimizedListContainers)
-							{
-								Log(options, $"Saving lists for {listContainer.PackageName}...");
-								File.WriteAllBytes(
-									$"{options.OutputPath}{Path.DirectorySeparatorChar}{listContainer.PackageName}.{OptimizedListContainer.Extension}",
-									listContainer.Serialize());
-							}
+							listContainer.AddOptimizedList(newList);
 						}
 
-						//Save the current dictionary
-						Log(options, "Saving dictionary...");
-						File.WriteAllBytes(options.DictionaryPath, listDictionary.Serialize());
-						break;
+						optimizedListContainers.Add(listContainer);
 					}
+
+					// Save the new lists
+					Log(toolOptions, "Saving optimized lists...", LogLevel.Info, true);
+
+					if (toolOptions.Format == OutputFormat.Flatfile)
+					{
+						foreach (OptimizedListContainer listContainer in optimizedListContainers)
+						{
+							Log(toolOptions, $"Saving lists for {listContainer.PackageName}...");
+
+							foreach (KeyValuePair<byte[], OptimizedList> optimizedListPair in listContainer.OptimizedLists)
+							{
+								string packageHash = BitConverter.ToString(optimizedListPair.Value.PackageHash).Replace("-", "");
+
+								File.WriteAllLines(
+									$"{toolOptions.OutputPath}{Path.DirectorySeparatorChar}(listfile)-{listContainer.PackageName}-{packageHash}.txt",
+									optimizedListPair.Value.OptimizedPaths);
+							}
+						}
+					}
+					else
+					{
+						foreach (OptimizedListContainer listContainer in optimizedListContainers)
+						{
+							Log(toolOptions, $"Saving lists for {listContainer.PackageName}...");
+							File.WriteAllBytes(
+								$"{toolOptions.OutputPath}{Path.DirectorySeparatorChar}{listContainer.PackageName}.{OptimizedListContainer.Extension}",
+								listContainer.Serialize());
+						}
+					}
+
+					//Save the current dictionary
+					Log(toolOptions, "Saving dictionary...");
+					File.WriteAllBytes(toolOptions.DictionaryPath, listDictionary.Serialize());
+					break;
 				}
-			}
-			else
-			{
-				Console.WriteLine(options.GetUsage());
 			}
 
 			// Read the input arguments
