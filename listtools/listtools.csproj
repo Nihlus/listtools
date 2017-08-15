@@ -4,8 +4,6 @@
     <RootNamespace>listtools</RootNamespace>
     <AssemblyName>listtools</AssemblyName>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>..\listtools.key</AssemblyOriginatorKeyFile>
     <EnvironmentVariables>
       <Variable name="DICTIONARY_PATH" value="/home/jarl/Programming/liblistfile/liblistfile/Dictionary/dictionary.dic" />
       <Variable name="GAME_PATH" value="/media/storage2/Games/World of Warcraft WOTLK" />
